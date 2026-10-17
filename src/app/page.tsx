@@ -12,7 +12,7 @@ type BrowserWindow = Window & typeof globalThis & {
   webkitAudioContext?: typeof AudioContext;
 };
 
-const WS_URL = process.env.NEXT_PUBLIC_BACKEND_WS_URL || "ws://localhost:8000/swaroop";
+const WS_URL = process.env.NEXT_PUBLIC_BACKEND_WS_URL || "ws://localhost:8000/ws/audio/swaroop";
 
 const SESSION_MINUTES = 15;
 
