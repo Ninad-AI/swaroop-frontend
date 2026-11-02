@@ -9,6 +9,8 @@
 
 export interface StreamingMicHandle {
   stop: () => void;
+  pause: () => void;
+  resume: () => void;
 }
 
 interface StreamingMicOptions {
@@ -103,7 +105,8 @@ export const startStreamingMic = async (
   let noiseSum = 0;
   let noiseCount = 0;
   const calibrationMs = 500;    // first 0.5 s used for noise-floor estimation
-  const streamStartTime = performance.now();
+  let streamStartTime = performance.now();
+  let isPaused = false;
 
   // AudioWorkletProcessor delivers fixed 128-sample render quanta, which
   // downsample to far fewer than FRAME_SIZE samples per callback. Accumulate
@@ -113,6 +116,7 @@ export const startStreamingMic = async (
 
   processor.port.onmessage = (event: MessageEvent<Float32Array>) => {
     if (ws.readyState !== WebSocket.OPEN) return;
+    if (isPaused) return;
 
     const input = event.data;
 
@@ -192,6 +196,21 @@ export const startStreamingMic = async (
   };
 
   return {
+    pause: () => {
+      if (isPaused) return;
+      isPaused = true;
+      sampleBuffer = new Float32Array(0);
+      isSpeaking = false;
+    },
+    resume: () => {
+      if (!isPaused) return;
+      isPaused = false;
+      sampleBuffer = new Float32Array(0);
+      noiseSum = 0;
+      noiseCount = 0;
+      streamStartTime = performance.now();
+      lastSpeechTs = 0;
+    },
     stop: () => {
       // If still speaking when stopped, send a final speech_end
       if (isSpeaking && ws.readyState === WebSocket.OPEN) {

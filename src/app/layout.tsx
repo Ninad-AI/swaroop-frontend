@@ -26,7 +26,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${outfit.variable} ${playfair.variable} antialiased noise-overlay`}>
+      <body className={`${outfit.variable} ${playfair.variable} antialiased`}>
         {children}
       </body>
     </html>

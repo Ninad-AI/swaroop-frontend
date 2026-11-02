@@ -15,6 +15,7 @@ type BrowserWindow = Window & typeof globalThis & {
 const WS_URL = process.env.NEXT_PUBLIC_BACKEND_WS_URL || "ws://localhost:8000/ws/audio/swaroop";
 
 const SESSION_MINUTES = 15;
+const AURORA_COLOR_STOPS = ["#0B132B", "#6366f1", "#ec4899"];
 
 export default function Home() {
   const [flowState, setFlowState] = useState<FlowState>("idle");
@@ -36,6 +37,9 @@ export default function Home() {
   const sourceEndPromisesRef = useRef<Promise<void>[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ttsActiveRef = useRef(false);
+  const ttsSampleRateRef = useRef(16000);
+  const resumeCaptureAfterPlaybackRef = useRef(false);
+  const capturePausedRef = useRef(false);
 
   /* ── Entrance animation + mouse-follow parallax ── */
   useEffect(() => {
@@ -145,7 +149,7 @@ export default function Home() {
         float32[i] = int16[i] / 32768;
       }
 
-      const sampleRate = 16000; // Must match backend TTS
+      const sampleRate = ttsSampleRateRef.current;
       const audioCtx = getAudioContext();
       const buffer = audioCtx.createBuffer(1, float32.length, sampleRate);
       buffer.copyToChannel(float32, 0, 0);
@@ -154,6 +158,21 @@ export default function Home() {
     },
     [getAudioContext, scheduleBuffer],
   );
+
+  const resumeCaptureAfterPlayback = useCallback(() => {
+    const pendingPromises = [...sourceEndPromisesRef.current];
+    const resume = () => {
+      resumeCaptureAfterPlaybackRef.current = false;
+      capturePausedRef.current = false;
+      micControllerRef.current?.resume();
+    };
+
+    if (pendingPromises.length > 0) {
+      Promise.all(pendingPromises).then(resume);
+    } else {
+      resume();
+    }
+  }, []);
 
   /* ── WebSocket audio streaming when active ── */
   useEffect(() => {
@@ -184,6 +203,11 @@ export default function Home() {
           },
         });
         micControllerRef.current = controller;
+        // The server can begin an intro before getUserMedia/worklet setup completes.
+        // Preserve its pause instruction so the intro is never recorded as user audio.
+        if (capturePausedRef.current) {
+          controller.pause();
+        }
         setIsConnected(true);
       } catch {
         setIsConnected(false);
@@ -202,6 +226,16 @@ export default function Home() {
           if (msg.type === "tts_start") {
             ttsActiveRef.current = true;
             setIsSpeaking(true);
+            ttsSampleRateRef.current = msg.sample_rate ?? 16000;
+          }
+          if (msg.type === "capture_pause") {
+            resumeCaptureAfterPlaybackRef.current = false;
+            capturePausedRef.current = true;
+            micControllerRef.current?.pause();
+          }
+          if (msg.type === "capture_resume") {
+            resumeCaptureAfterPlaybackRef.current = true;
+            resumeCaptureAfterPlayback();
           }
           if (msg.type === "tts_end") {
             // Wait for all scheduled audio buffers to finish playing
@@ -211,11 +245,22 @@ export default function Home() {
               Promise.all(pendingPromises).then(() => {
                 ttsActiveRef.current = false;
                 setIsSpeaking(false);
+                if (resumeCaptureAfterPlaybackRef.current) {
+                  resumeCaptureAfterPlayback();
+                }
               });
             } else {
               ttsActiveRef.current = false;
               setIsSpeaking(false);
+              if (resumeCaptureAfterPlaybackRef.current) {
+                resumeCaptureAfterPlayback();
+              }
             }
+          }
+          if (msg.type === "tts_stop") {
+            stopPlaybackImmediately();
+            ttsActiveRef.current = false;
+            setIsSpeaking(false);
           }
         } catch {
           /* ignore non-JSON */
@@ -244,7 +289,7 @@ export default function Home() {
       ttsActiveRef.current = false;
       stopPlaybackImmediately();
     };
-  }, [flowState, processBinaryChunk, stopPlaybackImmediately]);
+  }, [flowState, processBinaryChunk, resumeCaptureAfterPlayback, stopPlaybackImmediately]);
 
   const handleStartTalking = () => {
     setTimeLeft(SESSION_MINUTES * 60);
@@ -300,7 +345,7 @@ export default function Home() {
       {/* ── Background Aurora ── */}
       <div className="absolute inset-0 pointer-events-none">
         <Aurora
-          colorStops={["#0B132B", "#6366f1", "#ec4899"]}
+          colorStops={AURORA_COLOR_STOPS}
           blend={0.5}
           amplitude={flowState === "active" ? 0.6 : 1.0}
           speed={0.5}

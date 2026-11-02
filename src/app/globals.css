@@ -201,23 +201,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── Noise Overlay ── */
-.noise-overlay {
-  position: relative;
-}
-
-.noise-overlay::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image: url('/noise.svg');
-  background-repeat: repeat;
-  opacity: 0.04;
-  pointer-events: none;
-  z-index: 50;
-  mix-blend-mode: overlay;
-}
-
 /* ── Scrollbar ── */
 ::-webkit-scrollbar {
   width: 6px;
